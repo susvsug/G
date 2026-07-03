@@ -1,0 +1,16 @@
+
+  "name": "discord-booster-role-bot",
+  "version": "1.0.0",
+  "description": "Custom Booster Role Management Bot using discord.js v14 and better-sqlite3",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "config": "^3.3.12",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  }
+}
