@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 import datetime
 import os
+import re
 from collections import defaultdict
 from threading import Thread
 from flask import Flask
@@ -12,7 +13,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "نظام الحماية القصوى يعمل بنجاح 24/7"
+    return "نظام الحماية القصوى المطور يعمل بنجاح 24/7"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -24,8 +25,11 @@ Thread(target=run_web).start()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=".", intents=intents)
 
-# الحسابين الموثوقة (الأونرات) بناءً على طلبك
+# الحسابات الموثوقة (الأونرات)
 TRUSTED_IDS = [1422918463034228757, 1423421691773714482]
+
+# Courrier Bots البوتات المستثناة من حذف وإنشاء الرومات فقط
+EXEMPTED_BOTS = [652505019920285707, 762217899355013120]
 
 # الذاكرة المؤقتة للرتب والسبام
 removed_roles_backup = {}
@@ -33,6 +37,9 @@ action_cooldown = defaultdict(list)
 
 # الصلاحيات الخطيرة المراقبة
 DANGEROUS_PERMS = ['administrator', 'manage_guild', 'ban_members', 'kick_members', 'manage_roles', 'manage_channels', 'manage_webhooks']
+
+# نمط التحقق من روابط دعوات ديسكورد
+INVITE_REGEX = re.compile(r'(discord\.gg|discord\.com/invite)/[a-zA-Z0-9]+')
 
 # --- دالة إرسال الإمبيد التفصيلي للأونرات فقط ---
 async def send_owner_embed(title, description, target_info=None, extra_info=None):
@@ -43,11 +50,11 @@ async def send_owner_embed(title, description, target_info=None, extra_info=None
         timestamp=datetime.datetime.utcnow()
     )
     if target_info:
-        embed.add_field(name="🔹 الهدف المتأثر (الأساسي):", value=target_info, inline=False)
+        embed.add_field(name="🔹 Target / الهدف المستهدف:", value=target_info, inline=False)
     if extra_info:
         embed.add_field(name="🔹 تفاصيل إضافية:", value=extra_info, inline=False)
     
-    embed.set_footer(text="نظام الحماية التلقائي")
+    embed.set_footer(text="تقرير تلقائي - نظام الحماية القصوى")
         
     for owner_id in TRUSTED_IDS:
         owner = bot.get_user(owner_id) or await bot.fetch_user(owner_id)
@@ -55,27 +62,35 @@ async def send_owner_embed(title, description, target_info=None, extra_info=None
             try: await owner.send(embed=embed)
             except: pass
 
-# --- دالة قشع الرتب (بدون إرسال خاص للمخالف) ---
+# --- دالة قشع الرتب أو طرد البوتات المخالفة ---
 async def strip_roles(member: discord.Member, reason: str, target_info=None, extra_info=None):
-    if member.id in TRUSTED_IDS or member.bot:
+    if member.id in TRUSTED_IDS:
+        return
+        
+    # إذا كان المخالف بوتاً وليس مستثنى، يتم طرده فوراً
+    if member.bot:
+        try:
+            await member.kick(reason=f"[الحماية] - {reason}")
+            title_msg = "🚨 طرد بوت مخالف من السيرفر"
+            desc_msg = f"🤖 **البوت المخالف:** {member.mention}\n🆔 **ايدي البوت:** `{member.id}`\n❓ **السبب الكامل:** {reason}"
+            await send_owner_embed(title_msg, desc_msg, target_info, extra_info)
+        except: pass
         return
     
+    # للأعضاء البشرية: قشع الرتب صامت بدون إشعار المخالف
     all_removable_roles = [role for role in member.roles if not role.is_default() and role.position < member.guild.me.top_role.position]
     
     if all_removable_roles:
         removed_roles_backup[member.id] = all_removable_roles
         try:
-            # قشع صامت بدون أي رسالة للمخالف
             await member.remove_roles(*all_removable_roles, reason=f"[الحماية] - {reason}")
-            
-            # إرسال التفاصيل كاملة للأونرات
-            title_msg = "رصد محاولة تخريب وقشع الرتب"
+            title_msg = "🚨 رصد محاولة تخريب وقشع الرتب"
             desc_msg = f"👤 **المسؤول الفاعل:** {member.mention}\n🆔 **ايدي الفاعل:** `{member.id}`\n❓ **السبب:** {reason}"
             await send_owner_embed(title_msg, desc_msg, target_info, extra_info)
         except discord.Forbidden:
             print(f"فشل قشع رتب {member.name}")
 
-# --- دالة فحص السجلات ---
+# --- دالة فحص سجلات التدقيق ---
 async def get_audit_executor(guild, action_type, check_time=5):
     await asyncio.sleep(0.6)
     async for entry in guild.audit_logs(limit=3, action=action_type):
@@ -93,16 +108,16 @@ def check_spam_action(user_id, action_name, max_count=3, seconds=5):
     action_cooldown[f"{user_id}_{action_name}"] = user_actions
     return len(user_actions) > max_count
 
-# ==================== أنظمة الحماية ====================
+# ==================== أنظمة الحماية والأحداث ====================
 
 @bot.event
 async def on_guild_channel_delete(channel):
     entry = await get_audit_executor(channel.guild, discord.AuditLogAction.channel_delete)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = channel.guild.get_member(entry.user.id)
         if member:
-            await strip_roles(member, "حذف قناة/فئة من السيرفر", f"اسم الروم: {channel.name} | الايدي: `{channel.id}` | النوع: {channel.type}")
-            try: await channel.clone(reason="إعادة الحماية")
+            await strip_roles(member, "محاولة حذف قناة/فئة من السيرفر (تم حظر الإجراء لحماية الرسائل)", f"اسم الروم: {channel.name} | النوع: {channel.type}")
+            try: await channel.clone(reason="إعادة الروم تلقائياً لحماية هيكل السيرفر")
             except: pass
 
 @bot.event
@@ -118,7 +133,7 @@ async def on_guild_channel_update(before, after):
 @bot.event
 async def on_guild_channel_create(channel):
     entry = await get_audit_executor(channel.guild, discord.AuditLogAction.channel_create)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         if check_spam_action(entry.user.id, "channel_create", max_count=3, seconds=10):
             member = channel.guild.get_member(entry.user.id)
             if member: await strip_roles(member, "سبام إنشاء قنوات مكثف", f"الروم المكتشف: {channel.name}")
@@ -132,7 +147,7 @@ async def on_guild_role_delete(role):
         member = role.guild.get_member(entry.user.id)
         if member:
             await strip_roles(member, "حذف رتبة من السيرفر", f"اسم الرتبة المحذوفة: {role.name} (`{role.id}`)")
-            try: await role.guild.create_role(name=role.name, permissions=role.permissions, color=role.color, hoist=role.hoist, mentionable=role.mentionable)
+            try: await role.guild.create_role(name=role.name, permissions=role.permissions, color=role.color, hoist=role.hover, mentionable=role.mentionable)
             except: pass
 
 @bot.event
@@ -163,7 +178,6 @@ async def on_guild_role_update(before, after):
 
 @bot.event
 async def on_member_update(before, after):
-    # حماية إعطاء رتب خطيرة لأعضاء أو تعديل صلاحياتهم المباشرة
     if len(before.roles) != len(after.roles):
         entry = await get_audit_executor(after.guild, discord.AuditLogAction.member_role_update)
         if entry and entry.user.id not in TRUSTED_IDS:
@@ -172,10 +186,9 @@ async def on_member_update(before, after):
                 if any(getattr(role.permissions, perm) for perm in DANGEROUS_PERMS):
                     admin_member = after.guild.get_member(entry.user.id)
                     if admin_member:
-                        # جلب الشخص المستهدف الذي كان سيعطى الرتبة
                         await strip_roles(admin_member, "إعطاء رتبة خطيرة أو صلاحيات إدارة لعضو آخر", 
                                           f"الرتبة الخطيرة: {role.name} (`{role.id}`)", 
-                                          f"👤 **الشخص المستهدف الممنوح له:** {after.mention} (`{after.id}`)")
+                                          f"👤 **الشخص المستهدف:** {after.mention} (`{after.id}`)")
                         try: await after.remove_roles(role)
                         except: pass
 
@@ -201,7 +214,7 @@ async def on_guild_update(before, after):
     if entry and entry.user.id not in TRUSTED_IDS:
         member = after.get_member(entry.user.id)
         if member:
-            await strip_roles(member, "تعديل وتخريب إعدادات وهواية السيرفر", f"اسم السيرفر: {after.name}", f"تم محاولة تعديل (الاسم/الأيقونة/البانر/مستوى التحقق)")
+            await strip_roles(member, "تعديل وتخريب إعدادات وهواية السيرفر", f"اسم السيرفر: {after.name}")
             try: await after.edit(name=before.name, icon=before.icon, banner=before.banner, description=before.description, verification_level=before.verification_level, mfa_level=before.mfa_level)
             except: pass
 
@@ -227,7 +240,7 @@ async def on_invite_create(invite):
     if executor and executor.id not in TRUSTED_IDS:
         if check_spam_action(executor.id, "invite_create", max_count=4, seconds=10):
             member = invite.guild.get_member(executor.id)
-            if member: await strip_roles(member, "سبام إنشاء روابط دعوات مكثف", f"كود الدعوة المحدث: {invite.code}")
+            if member: await strip_roles(member, "سبام إنشاء روابط دعوات مكثف")
             try: await invite.delete()
             except: pass
 
@@ -237,7 +250,7 @@ async def on_member_ban(guild, user):
     if entry and entry.user.id not in TRUSTED_IDS:
         if check_spam_action(entry.user.id, "mass_ban", max_count=3, seconds=300):
             member = guild.get_member(entry.user.id)
-            if member: await strip_roles(member, "سبام باندات عشوائية ومكثفة (Mass Ban)", f"آخر عضو تم تبنيده: {user.name}")
+            if member: await strip_roles(member, "سبام حظر مكثف (Mass Ban)")
 
 @bot.event
 async def on_member_remove(member):
@@ -245,7 +258,7 @@ async def on_member_remove(member):
     if entry and entry.user.id not in TRUSTED_IDS:
         if check_spam_action(entry.user.id, "mass_kick", max_count=3, seconds=300):
             admin_member = member.guild.get_member(entry.user.id)
-            if admin_member: await strip_roles(admin_member, "سبام طرد للأعضاء (Kick Spam)", f"آخر عضو طُرد: {member.name}")
+            if admin_member: await strip_roles(admin_member, "سبام طرد للأعضاء (Kick Spam)")
 
 @bot.event
 async def on_member_join(member):
@@ -256,8 +269,7 @@ async def on_member_join(member):
                 await member.ban(reason="دخول بوت غير مصرح به")
                 inviter = member.guild.get_member(entry.user.id)
                 if inviter: 
-                    await strip_roles(inviter, "إدخال بوت غريب ومخرب للسيرفر", 
-                                      f"🤖 **البوت الذي طُرد:** {member.mention} (`{member.id}`)")
+                    await strip_roles(inviter, "إدخال بوت غريب ومخرب للسيرفر", f"🤖 **البوت الدخيل:** {member.mention}")
             except: pass
 
 @bot.event
@@ -266,16 +278,38 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # حماية منشن ايفري وهير أو منشن أكثر من 10 أعضاء
+    # 1. منع روابط السيرفرات وحذفها فوراً
+    if INVITE_REGEX.search(message.content):
+        try:
+            await message.delete()
+            await strip_roles(message.author, "نشر روابط دعوات لسيرفرات أخرى")
+            return
+        except: pass
+
+    # 2. حماية منشن الرتب الكبيرة (تعديل: 4 مرات | للبشر 5 دقائق وللبوتات دقيقتين)
+    if message.role_mentions:
+        for role in message.role_mentions:
+            if len(role.members) >= 10:
+                # تحديد وقت التبريد بناءً على نوع الحساب
+                cooldown_seconds = 120 if message.author.bot else 300
+                
+                if check_spam_action(message.author.id, f"role_mention_{role.id}", max_count=4, seconds=cooldown_seconds):
+                    time_frame = "دقيقتين" if message.author.bot else "5 دقائق"
+                    await strip_roles(message.author, f"تكرار منشن رتبة كبيرة تحتوي على عدد كبير من الأعضاء ({role.name}) 4 مرات خلال {time_frame}")
+                    try: await message.delete()
+                    except: pass
+                    return
+
+    # 3. حماية منشن ايفري وهير أو منشن أكثر من 10 أعضاء
     if message.mention_everyone or len(message.mentions) >= 10:
         if check_spam_action(message.author.id, "mass_mention", max_count=3, seconds=300):
             await strip_roles(message.author, "سبام منشن جماعي أو عشوائي للأعضاء (Mass Mention)")
             return
 
-    # حماية سبام المنشن العادي (إذا كرر منشن شخص أو رتبة 3 مرات ورا بعض بسرعة)
-    if len(message.mentions) > 0 or len(message.role_mentions) > 0:
+    # 4. حماية سبام المنشن العادي للأعضاء
+    if len(message.mentions) > 0:
         if check_spam_action(message.author.id, "mention_spam", max_count=3, seconds=10):
-            await strip_roles(message.author, "سبام وتكرار المنشن المزعج للأعضاء أو الرتب")
+            await strip_roles(message.author, "سبام وتكرار المنشن المزعج للأعضاء")
             return
 
     await bot.process_commands(message)
