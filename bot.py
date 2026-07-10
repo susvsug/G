@@ -25,10 +25,10 @@ Thread(target=run_web).start()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=".", intents=intents)
 
-# الحسابات الموثوقة (الأونرات) - لها حصانة كاملة
+# الحسابات الموثوقة (الأونرات)
 TRUSTED_IDS = [1422918463034228757, 1423421691773714482]
 
-# البوتات المستثناة والتي تملك حصانة كاملة ومطلقة في السيرفر (مثل بوتات التيكت)
+# البوتات المستثناة والتي تملك حصانة كاملة ومطلقة في السيرفر
 EXEMPTED_BOTS = [652505019920285707, 762217899355013120]
 
 # الذاكرة المؤقتة للرتب والسبام
@@ -68,7 +68,7 @@ async def strip_roles(member: discord.Member, reason: str, target_info=None, ext
     if member.id in TRUSTED_IDS or member.id in EXEMPTED_BOTS:
         return
         
-    # إذا كان المخالف بوتاً غريباً (وليس من البوتات المستثناة)، يتم طرده فوراً لحماية الشات
+    # إذا كان المخالف بوتاً غريباً (وليس من البوتات المستثناة)، يتم طرده فوراً
     if member.bot:
         try:
             await member.kick(reason=f"[الحماية] - {reason}")
@@ -93,7 +93,7 @@ async def strip_roles(member: discord.Member, reason: str, target_info=None, ext
 
 # --- دالة فحص سجلات التدقيق ---
 async def get_audit_executor(guild, action_type, check_time=5):
-    await asyncio.sleep(0.4)
+    await asyncio.sleep(0.6)
     async for entry in guild.audit_logs(limit=3, action=action_type):
         now = datetime.datetime.now(datetime.timezone.utc)
         if (now - entry.created_at).total_seconds() < check_time:
@@ -113,21 +113,21 @@ def check_spam_action(user_id, action_name, max_count=3, seconds=5):
 
 @bot.event
 async def on_guild_channel_delete(channel):
-    # تم إلغاء الاستنساخ التلقائي هنا لأنه يظهر الروم فاضي بدون رسائل ويسبب إزعاج
     entry = await get_audit_executor(channel.guild, discord.AuditLogAction.channel_delete)
     if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = channel.guild.get_member(entry.user.id)
         if member:
-            await strip_roles(member, "🚨 قام بحذف قناة من السيرفر (تم التعامل معه فوراً)", f"اسم الروم المحذوف: {channel.name} | النوع: {channel.type}")
+            await strip_roles(member, "محاولة حذف قناة/فئة من السيرفر", f"اسم الروم: {channel.name} | النوع: {channel.type}")
+            try: await channel.clone(reason="إعادة إنشاء الروم تلقائياً لحماية هيكل السيرفر")
+            except: pass
 
 @bot.event
 async def on_guild_channel_update(before, after):
-    # منع التلاعب بالصلاحيات أو محاولة التمهيد لحذف الروم
     entry = await get_audit_executor(after.guild, discord.AuditLogAction.channel_update)
     if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = after.guild.get_member(entry.user.id)
         if member:
-            await strip_roles(member, "محاولة تعديل خصائص أو صلاحيات القنوات (حماية استباقية قبل الحذف)", f"الروم المتأثر: {after.mention} (`{after.id}`)", f"الاسم قبل: {before.name} | بعد: {after.name}")
+            await strip_roles(member, "تعديل خصائص أو صلاحيات القنوات", f"الروم المتأثر: {after.mention} (`{after.id}`)", f"الاسم قبل: {before.name} | بعد: {after.name}")
             try: await after.edit(name=before.name, topic=before.topic, nsfw=before.nsfw, category=before.category, sync_permissions=True)
             except: pass
 
