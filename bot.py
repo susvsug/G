@@ -167,15 +167,16 @@ async def on_guild_role_update(before, after):
     if entry and entry.user.id not in TRUSTED_IDS:
         member = after.guild.get_member(entry.user.id)
         if member:
+            # التحقق فقط إذا تم إضافة صلاحية جديدة خطيرة لم تكن موجودة من قبل
             for perm in DANGEROUS_PERMS:
                 if getattr(after.permissions, perm) and not getattr(before.permissions, perm):
-                    await strip_roles(member, f"محاولة تفعيل صلاحية خطيرة ({perm})", f"الرتبة المعدلة: {after.name} (`{after.id}`)")
+                    await strip_roles(member, f"محاولة تفعيل صلاحية خطيرة للرتبة ({perm})", f"الرتبة المعدلة: {after.name} (`{after.id}`)")
                     try: await after.edit(permissions=before.permissions)
                     except: pass
                     return
-            await strip_roles(member, "تعديل رتبة بشكل غير مصرح به", f"الرتبة المعدلة: {after.name} (`{after.id}`)")
-            try: await after.edit(permissions=before.permissions, color=before.color, hoist=before.hoist, mentionable=before.mentionable)
-            except: pass
+            
+            # تم حذف شرط قشع الرتب عند تغيير اللون، الاسم، الأيقونة، أو رفع الترتيب العادي.
+            # الحين الأعضاء يقدرون يعدلون شكل الرتبة براحتهم بدون ما يلمسهم البوت.
 
 @bot.event
 async def on_member_update(before, after):
@@ -184,6 +185,7 @@ async def on_member_update(before, after):
         if entry and entry.user.id not in TRUSTED_IDS:
             added_roles = [r for r in after.roles if r not in before.roles]
             for role in added_roles:
+                # إذا قام شخص بإعطاء رتبة تملك أي صلاحية خطيرة لعضو آخر
                 if any(getattr(role.permissions, perm) for perm in DANGEROUS_PERMS):
                     admin_member = after.guild.get_member(entry.user.id)
                     if admin_member:
