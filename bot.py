@@ -29,7 +29,12 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 TRUSTED_IDS = [1422918463034228757, 1423421691773714482]
 
 # البوتات المستثناة والتي تملك حصانة كاملة ومطلقة في السيرفر
-EXEMPTED_BOTS = [652505019920285707, 762217899355013120]
+EXEMPTED_BOTS = [
+    652505019920285707, 
+    762217899355013120, 
+    1526691977863626802,  # بوت الحماية من حذف الرومات المضاف حديثاً
+    1510521767423246486   # بوت الحماية من حذف الرولات المضاف حديثاً
+]
 
 # الذاكرة المؤقتة للرتب والسبام
 removed_roles_backup = {}
@@ -144,7 +149,7 @@ async def on_guild_channel_create(channel):
 @bot.event
 async def on_guild_role_delete(role):
     entry = await get_audit_executor(role.guild, discord.AuditLogAction.role_delete)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = role.guild.get_member(entry.user.id)
         if member:
             await strip_roles(member, "حذف رتبة من السيرفر", f"اسم الرتبة المحذوفة: {role.name} (`{role.id}`)")
@@ -154,7 +159,7 @@ async def on_guild_role_delete(role):
 @bot.event
 async def on_guild_role_create(role):
     entry = await get_audit_executor(role.guild, discord.AuditLogAction.role_create)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         if check_spam_action(entry.user.id, "role_create", max_count=3, seconds=10):
             member = role.guild.get_member(entry.user.id)
             if member: await strip_roles(member, "سبام إنشاء رتب مكثف", f"الرتبة المكتشفة: {role.name}")
@@ -164,7 +169,7 @@ async def on_guild_role_create(role):
 @bot.event
 async def on_guild_role_update(before, after):
     entry = await get_audit_executor(after.guild, discord.AuditLogAction.role_update)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = after.guild.get_member(entry.user.id)
         if member:
             # التحقق فقط إذا تم إضافة صلاحية جديدة خطيرة لم تكن موجودة من قبل
@@ -174,15 +179,12 @@ async def on_guild_role_update(before, after):
                     try: await after.edit(permissions=before.permissions)
                     except: pass
                     return
-            
-            # تم حذف شرط قشع الرتب عند تغيير اللون، الاسم، الأيقونة، أو رفع الترتيب العادي.
-            # الحين الأعضاء يقدرون يعدلون شكل الرتبة براحتهم بدون ما يلمسهم البوت.
 
 @bot.event
 async def on_member_update(before, after):
     if len(before.roles) != len(after.roles):
         entry = await get_audit_executor(after.guild, discord.AuditLogAction.member_role_update)
-        if entry and entry.user.id not in TRUSTED_IDS:
+        if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
             added_roles = [r for r in after.roles if r not in before.roles]
             for role in added_roles:
                 # إذا قام شخص بإعطاء رتبة تملك أي صلاحية خطيرة لعضو آخر
@@ -200,7 +202,7 @@ async def on_webhooks_update(channel):
     await asyncio.sleep(0.5)
     async for entry in channel.guild.audit_logs(limit=1):
         if entry.action in [discord.AuditLogAction.webhook_create, discord.AuditLogAction.webhook_update, discord.AuditLogAction.webhook_delete]:
-            if entry.user.id not in TRUSTED_IDS:
+            if entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
                 member = channel.guild.get_member(entry.user.id)
                 if member:
                     action_name = "إنشاء" if entry.action == discord.AuditLogAction.webhook_create else "تعديل" if entry.action == discord.AuditLogAction.webhook_update else "حذف"
@@ -214,7 +216,7 @@ async def on_webhooks_update(channel):
 @bot.event
 async def on_guild_update(before, after):
     entry = await get_audit_executor(after, discord.AuditLogAction.guild_update)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = after.get_member(entry.user.id)
         if member:
             await strip_roles(member, "تعديل وتخريب إعدادات وهواية السيرفر", f"اسم السيرفر: {after.name}")
@@ -225,7 +227,7 @@ async def on_guild_update(before, after):
 async def on_guild_emojis_update(guild, before, after):
     if len(before) > len(after):
         entry = await get_audit_executor(guild, discord.AuditLogAction.emoji_delete)
-        if entry and entry.user.id not in TRUSTED_IDS:
+        if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
             member = guild.get_member(entry.user.id)
             if member: await strip_roles(member, "حذف إيموجيات السيرفر")
 
@@ -233,14 +235,14 @@ async def on_guild_emojis_update(guild, before, after):
 async def on_guild_stickers_update(guild, before, after):
     if len(before) > len(after):
         entry = await get_audit_executor(guild, discord.AuditLogAction.sticker_delete)
-        if entry and entry.user.id not in TRUSTED_IDS:
+        if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
             member = guild.get_member(entry.user.id)
             if member: await strip_roles(member, "حذف ستيكرات السيرفر")
 
 @bot.event
 async def on_invite_create(invite):
     executor = invite.inviter
-    if executor and executor.id not in TRUSTED_IDS:
+    if executor and executor.id not in TRUSTED_IDS and executor.id not in EXEMPTED_BOTS:
         if check_spam_action(executor.id, "invite_create", max_count=4, seconds=10):
             member = invite.guild.get_member(executor.id)
             if member: await strip_roles(member, "سبام إنشاء روابط دعوات مكثف")
@@ -250,7 +252,7 @@ async def on_invite_create(invite):
 @bot.event
 async def on_member_ban(guild, user):
     entry = await get_audit_executor(guild, discord.AuditLogAction.ban)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         if check_spam_action(entry.user.id, "mass_ban", max_count=3, seconds=300):
             member = guild.get_member(entry.user.id)
             if member: await strip_roles(member, "سبام حظر مكثف (Mass Ban)")
@@ -258,7 +260,7 @@ async def on_member_ban(guild, user):
 @bot.event
 async def on_member_remove(member):
     entry = await get_audit_executor(member.guild, discord.AuditLogAction.kick)
-    if entry and entry.user.id not in TRUSTED_IDS:
+    if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         if check_spam_action(entry.user.id, "mass_kick", max_count=3, seconds=300):
             admin_member = member.guild.get_member(entry.user.id)
             if admin_member: await strip_roles(admin_member, "سبام طرد للأعضاء (Kick Spam)")
@@ -289,7 +291,7 @@ async def on_message(message):
             return
         except: pass
 
-    # 2. منشن الرتب الكبيرة (4 مرات | للبشر 5 دقائق وللبوتات الغريبة دقيقتين)
+    # 2. منشن الرتب الكبيرة
     if message.role_mentions:
         for role in message.role_mentions:
             if len(role.members) >= 10:
