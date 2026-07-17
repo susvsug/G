@@ -32,8 +32,8 @@ TRUSTED_IDS = [1422918463034228757, 1423421691773714482]
 EXEMPTED_BOTS = [
     652505019920285707, 
     762217899355013120, 
-    1526691977863626802,  # بوت الحماية من حذف الرومات المضاف حديثاً
-    1510521767423246486   # بوت الحماية من حذف الرولات المضاف حديثاً
+    1526691977863626802,  # بوت الحماية من حذف الرومات
+    1510521767423246486   # بوت الحماية من حذف الرولات
 ]
 
 # الذاكرة المؤقتة للرتب والسبام
@@ -67,13 +67,11 @@ async def send_owner_embed(title, description, target_info=None, extra_info=None
             try: await owner.send(embed=embed)
             except: pass
 
-# --- دالة قشع الرتب أو طرد البوتات المخالفة (مع تفعيل الحصانة) ---
+# --- دالة قشع الرتب وإرسال رسالة بالخاص للشخص المخالف ---
 async def strip_roles(member: discord.Member, reason: str, target_info=None, extra_info=None):
-    # حصانة كاملة للأونرات وللبوتات المستثناة حقتك
     if member.id in TRUSTED_IDS or member.id in EXEMPTED_BOTS:
         return
         
-    # إذا كان المخالف بوتاً غريباً (وليس من البوتات المستثناة)، يتم طرده فوراً
     if member.bot:
         try:
             await member.kick(reason=f"[الحماية] - {reason}")
@@ -83,15 +81,24 @@ async def strip_roles(member: discord.Member, reason: str, target_info=None, ext
         except: pass
         return
     
-    # للأعضاء البشرية غير الموثوقة: قشع الرتب صامت
     all_removable_roles = [role for role in member.roles if not role.is_default() and role.position < member.guild.me.top_role.position]
     
     if all_removable_roles:
         removed_roles_backup[member.id] = all_removable_roles
         try:
+            # إرسال رسالة تنبيه بالخاص للشخص المقشوع قبل السحب
+            embed_dm = discord.Embed(
+                title="⚠️ تنبيه أمني من نظام الحماية",
+                description=f"مرحباً {member.mention}، تم سحب رتبك تلقائياً من سيرفر **{member.guild.name}** بسبب محاولة تخريب أو مخالفة أنظمة الحماية.\n\n❓ **السبب:** {reason}",
+                color=discord.Color.orange()
+            )
+            try: await member.send(embed=embed_dm)
+            except: pass # إذا كانت خاصيته مقفلة
+
             await member.remove_roles(*all_removable_roles, reason=f"[الحماية] - {reason}")
-            title_msg = "🚨 رصد محاولة تخريب وقشع الرتب"
-            desc_msg = f"👤 **المسؤول الفاعل:** {member.mention}\n🆔 **ايدي الفاعل:** `{member.id}`\n❓ **السبب:** {reason}"
+            
+            title_msg = "🚨 رصد مخالفة وقشع الرتب"
+            desc_msg = f"👤 **الفاعل المتأثر:** {member.mention}\n🆔 **الايدي:** `{member.id}`\n❓ **السبب:** {reason}"
             await send_owner_embed(title_msg, desc_msg, target_info, extra_info)
         except discord.Forbidden:
             print(f"فشل قشع رتب {member.name}")
@@ -172,10 +179,12 @@ async def on_guild_role_update(before, after):
     if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
         member = after.guild.get_member(entry.user.id)
         if member:
-            # التحقق فقط إذا تم إضافة صلاحية جديدة خطيرة لم تكن موجودة من قبل
             for perm in DANGEROUS_PERMS:
-                if getattr(after.permissions, perm) and not getattr(before.permissions, perm):
-                    await strip_roles(member, f"محاولة تفعيل صلاحية خطيرة للرتبة ({perm})", f"الرتبة المعدلة: {after.name} (`{after.id}`)")
+                has_before = getattr(before.permissions, perm)
+                has_after = getattr(after.permissions, perm)
+                
+                if has_after and not has_before:
+                    await strip_roles(member, f"محاولة تفعيل صلاحية خطيرة جديدة للرتبة ({perm})", f"الرتبة المعدلة: {after.name} (`{after.id}`)")
                     try: await after.edit(permissions=before.permissions)
                     except: pass
                     return
@@ -187,15 +196,20 @@ async def on_member_update(before, after):
         if entry and entry.user.id not in TRUSTED_IDS and entry.user.id not in EXEMPTED_BOTS:
             added_roles = [r for r in after.roles if r not in before.roles]
             for role in added_roles:
-                # إذا قام شخص بإعطاء رتبة تملك أي صلاحية خطيرة لعضو آخر
                 if any(getattr(role.permissions, perm) for perm in DANGEROUS_PERMS):
+                    # 1. تحديد المشرف الفاعل الذي قام بإعطاء الرتبة وقشعه فوراً
                     admin_member = after.guild.get_member(entry.user.id)
                     if admin_member:
-                        await strip_roles(admin_member, "إعطاء رتبة خطيرة أو صلاحيات إدارة لعضو آخر", 
-                                          f"الرتبة الخطيرة: {role.name} (`{role.id}`)", 
+                        await strip_roles(admin_member, f"إعطاء رتبة خطيرة ({role.name}) لعضو آخر بدون تصريح رسمي", 
+                                          f"الرتبة الموزعة: {role.name} (`{role.id}`)", 
                                           f"👤 **الشخص المستهدف:** {after.mention} (`{after.id}`)")
-                        try: await after.remove_roles(role)
-                        except: pass
+                    
+                    # 2. تحديد الشخص المستهدف (الذي استلم الرتبة الخطيرة) وقشع رتبه هو أيضاً لحماية السيرفر
+                    if after.id not in TRUSTED_IDS and after.id not in EXEMPTED_BOTS:
+                        await strip_roles(after, f"استلام وقبول رتبة خطيرة ({role.name}) تحتوي على صلاحيات إدارة وتخريب",
+                                          f"الرتبة المستلمة: {role.name}",
+                                          f"👤 **المشرف الفاعل:** {admin_member.mention if admin_member else 'غير معروف'}")
+                    return
 
 @bot.event
 async def on_webhooks_update(channel):
@@ -283,7 +297,6 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # 1. منع روابط السيرفرات وحذفها فوراً
     if INVITE_REGEX.search(message.content):
         try:
             await message.delete()
@@ -291,7 +304,6 @@ async def on_message(message):
             return
         except: pass
 
-    # 2. منشن الرتب الكبيرة
     if message.role_mentions:
         for role in message.role_mentions:
             if len(role.members) >= 10:
@@ -303,13 +315,11 @@ async def on_message(message):
                     except: pass
                     return
 
-    # 3. حماية منشن ايفري وهير أو منشن أكثر من 10 أعضاء
     if message.mention_everyone or len(message.mentions) >= 10:
         if check_spam_action(message.author.id, "mass_mention", max_count=3, seconds=300):
             await strip_roles(message.author, "سبام منشن جماعي أو عشوائي للأعضاء (Mass Mention)")
             return
 
-    # 4. حماية سبام المنشن العادي للأعضاء
     if len(message.mentions) > 0:
         if check_spam_action(message.author.id, "mention_spam", max_count=3, seconds=10):
             await strip_roles(message.author, "سبام وتكرار المنشن المزعج للأعضاء")
