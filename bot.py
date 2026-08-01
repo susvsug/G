@@ -1,46 +1,46 @@
+import os
 import discord
-from discord.ext import commands
 
-# إعداد الصلاحيات اللازمة
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+client = discord.Client(intents=intents)
 
-# معرفات (IDs) الرتبة والحساب التي زودتني بها
-TARGET_MEMBER_ID = 1422918463034228757
+# الأرقام الخاصة بك التي حددتها
 TARGET_ROLE_ID = 1527939953881911468
+TARGET_MEMBER_ID = 1422918463034228757
 
-@bot.event
+@client.event
 async def on_ready():
-    print(f"البوت جاهز ويعمل كـ: {bot.user}")
+    print(f"Logged in as {client.user} and ready for Railway!")
 
-@bot.command()
-async def assign(ctx):
-    # جلب العضو المستهدف من السيرفر باستخدام الـ ID
-    member = ctx.guild.get_member(TARGET_MEMBER_ID)
-    # جلب الرتبة المستهدفة من السيرفر باستخدام الـ ID
-    role = ctx.guild.get_role(TARGET_ROLE_ID)
-
-    # التحقق من وجود العضو في السيرفر
-    if not member:
-        await ctx.send("❌ لم يتم العثور على الحساب المستهدف في هذا السيرفر.")
+@client.event
+async def on_message(message):
+    if message.author == client.user:
         return
 
-    # التحقق من وجود الرتبة في السيرفر
-    if not role:
-        await ctx.send("❌ لم يتم العثور على الرتبة المستهدفة في هذا السيرفر.")
-        return
+    # إذا تحتوي الرسالة على المعرفين معاً
+    if str(TARGET_ROLE_ID) in message.content and str(TARGET_MEMBER_ID) in message.content:
+        guild = message.guild
+        if not guild:
+            return
 
-    try:
-        # إعطاء الرتبة للعضو
-        await member.add_roles(role)
-        await ctx.send(f"✅ تم إعطاء رتبة <@&{TARGET_ROLE_ID}> للحساب <@{TARGET_MEMBER_ID}> بنجاح!")
-    except discord.Forbidden:
-        await ctx.send("❌ لا أملك الصلاحيات الكافية. تأكد من رفع رتبة البوت فوق الرتبة المراد إعطاؤها في إعدادات السيرفر.")
-    except Exception as e:
-        await ctx.send(f"❌ حدث خطأ غير متوقع: {e}")
+        member = guild.get_member(TARGET_MEMBER_ID)
+        role = guild.get_role(TARGET_ROLE_ID)
 
-# ضع توكن البوت الخاص بك هنا
-bot.run("YOUR_BOT_TOKEN")
+        if member and role:
+            try:
+                await member.add_roles(role)
+                await message.channel.send("✅ تم إعطاؤك الرتبة بنجاح!")
+            except discord.Forbidden:
+                await message.channel.send("❌ ارفع رتبة البوت فوق الرتبة المطلوبة في إعدادات السيرفر.")
+            except Exception as e:
+                await message.channel.send(f"❌ خطأ: {e}")
+
+# جلب التوكن من متغيرات البيئة الخاصة بـ Railway لحماية بوتك
+TOKEN = os.getenv("DISCORD_TOKEN")
+if TOKEN:
+    client.run(TOKEN)
+else:
+    print("Error: DISCORD_TOKEN variable is not set!")
